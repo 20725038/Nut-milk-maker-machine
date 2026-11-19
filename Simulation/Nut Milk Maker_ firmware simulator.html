@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nut Milk Maker: firmware simulator</title>
+<style>
+:root{--bg:#f4f7f5;--card:#fff;--ink:#1b2b24;--mut:#5d6f66;--line:#d3ddd7;--g:#1f4d3a;--gold:#d9a441;--red:#b5533c;--ok:#2e8b57;--lcd:#9fc79a;--lcdi:#14301f;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101a15;--card:#18261f;--ink:#e6efe9;--mut:#9db1a6;--line:#2c3f35;--g:#6fa287;--lcd:#8fb58a;--lcdi:#0e2216}}
+:root[data-theme="dark"]{--bg:#101a15;--card:#18261f;--ink:#e6efe9;--mut:#9db1a6;--line:#2c3f35;--g:#6fa287;--lcd:#8fb58a;--lcdi:#0e2216}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Calibri,Arial,sans-serif}
+.w{max-width:1100px;margin:0 auto;padding:16px}
+h1{font:700 24px Cambria,Georgia,serif;margin:0 0 4px;color:var(--g)}h2{font-size:15px;margin:0 0 8px}
+p.s{margin:0 0 12px;color:var(--mut)}
+.grid{display:grid;grid-template-columns:1.1fr 1fr;gap:14px}@media(max-width:820px){.grid{grid-template-columns:1fr}}
+.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.lcd{background:var(--lcd);color:var(--lcdi);font:700 22px/1.25 Consolas,"Courier New",monospace;border-radius:8px;padding:12px 14px;letter-spacing:2px;white-space:pre;border:4px solid var(--line);overflow-x:auto}
+.lcd.off{background:#222;color:#222}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+button,select{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:9px 12px;cursor:pointer;touch-action:manipulation;user-select:none}
+button.b{background:var(--g);color:#fff;border-color:var(--g);min-width:92px;font-weight:700}
+html[data-theme] button.b{color:#fff}
+button.b:active,button.dn{filter:brightness(1.25)}
+.led{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);font-size:13px}
+.led i{width:12px;height:12px;border-radius:50%;background:#7a867f;display:inline-block}.led.on i{background:var(--gold);box-shadow:0 0 8px var(--gold)}.led.on.r i{background:var(--red);box-shadow:0 0 8px var(--red)}
+.bar{height:10px;background:var(--line);border-radius:6px;overflow:hidden}.bar b{display:block;height:100%;background:var(--g);width:0}
+.m{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px;margin-top:10px}.m span:nth-child(odd){color:var(--mut)}
+label.t{display:flex;gap:8px;align-items:center;padding:4px 0;font-size:14px}
+.chk{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px}
+.k{border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:13px;color:var(--mut)}.k.ok{color:var(--ink);border-color:var(--ok)}.k.ok:before{content:"\2713  ";color:var(--ok);font-weight:700}
+#log{height:150px;overflow:auto;font:12px/1.5 Consolas,monospace;background:var(--bg);border-radius:8px;padding:8px;border:1px solid var(--line)}
+.tag{font-size:12px;color:var(--mut)}
+canvas{width:100%;display:block;background:var(--bg);border-radius:8px;border:1px solid var(--line);margin-top:8px}
+svg{width:100%;height:auto;display:block}
+</style></head><body><div class="w">
+<h1>Nut Milk Maker: firmware simulator</h1>
+<p class="s">A behavioural model of main.c (all nine orders and the workaround modes) with the Arduino Nano, LCD1602, buttons, lid switch, NTC, heater relay, motor driver and buzzer. Press and hold buttons with the mouse or finger. Not a cycle-accurate AVR emulator.</p>
+<div class="c" style="margin-bottom:14px"><div class="row" style="margin:0 0 6px"><h2 style="margin:0">Circuit view</h2><button id="run" class="b">⏸ Pause</button><span class="tag">Click the buttons and the lid switch on the circuit. A wire lights up when its signal is HIGH.</span></div><div id="ckt"></div></div>
+<div class="grid"><div>
+<div class="c"><div class="lcd" id="lcd"></div>
+<div class="row"><button class="b" data-b="start">START / STOP</button><button class="b" data-b="time">TIME</button><button class="b" data-b="prog">PROGRAM</button><button class="b" data-b="speed">SPEED</button></div>
+<div class="row"><label class="t"><input type="checkbox" id="lid" checked> Lid and jug closed (D4 LOW)</label></div>
+<div class="row"><span class="led" id="lH"><i></i>Heater D8</span><span class="led" id="lB"><i></i>Buzzer D10</span><span class="led" id="lW"><i></i>Workaround</span></div>
+<div class="m"><span>Motor PWM D9</span><span><div class="bar"><b id="bd"></b></div></span><span>Motor speed</span><span id="rpm">0 RPM</span><span>Liquid temperature</span><span id="tt">25.0 °C</span><span>NTC reading (A0)</span><span id="ta">25.0 °C</span><span>Run-time counter (EEPROM)</span><span id="ee">590 min</span><span>Simulated time</span><span id="clk">0:00:00</span></div></div>
+<div class="c" style="margin-top:14px"><h2>Orders observed so far</h2><div class="chk" id="chk"></div></div>
+</div><div>
+<div class="c"><h2>Simulation speed</h2><select id="mult"><option value="1">x1 (real time)</option><option value="10">x10</option><option value="60" selected>x60</option><option value="300">x300</option></select>
+<div class="row"><button id="bClr">Set counter to 595 min</button><button id="bCool">Cool liquid to 25 °C</button></div>
+<p class="tag">Try: press START. Hold START 5 s for the self-test. Press PROGRAM three times for Eco-Self Clean, then hold TIME or SPEED 5 s after the matching fault.</p></div>
+<div class="c" style="margin-top:14px"><h2>Inject a fault</h2>
+<label class="t"><input type="checkbox" id="fN"> NTC sensor open</label>
+<label class="t"><input type="checkbox" id="fM"> Motor driver failed</label>
+<label class="t"><input type="checkbox" id="fS"> Lid switch stuck open</label>
+<label class="t"><input type="checkbox" id="fH"> Heater relay not switching</label>
+<label class="t"><input type="checkbox" id="fB"> Buzzer dead</label>
+<label class="t"><input type="checkbox" id="fL"> LCD dead</label></div>
+<div class="c" style="margin-top:14px"><h2>Event log</h2><div id="log"></div></div>
+</div></div>
+<div class="c" style="margin-top:14px"><h2>Arduino pin signals (logic analyser view)</h2>
+<div class="row" style="margin-top:0"><label class="t">Time window <select id="win"><option value="60">1 min</option><option value="600" selected>10 min</option><option value="3600">60 min</option></select></label></div>
+<p class="tag">Buttons idle HIGH (pull-up) and go LOW when pressed. D4 LOW means lid closed. D8 and D10 are on/off. D9 is the PWM duty in %. A0 is the NTC divider voltage (0 V when the sensor is open).</p>
+<canvas id="sig"></canvas>
+<p class="tag" style="margin-top:10px">D9 at microsecond scale: 20 kHz PWM (50 µs period, TOP = 799), three periods shown.</p>
+<canvas id="pwm"></canvas></div></div>
+<script>
+const $=id=>document.getElementById(id);
+const S={st:'IDLE',mode:0,timer:30,speed:50,lo:77,hi:82,run:60000,pause:30000,t:0,t0:0,dur:0,tp:0,mOn:false,heat:false,T:25,rpm:0,ntcSince:0,F:{},waT:false,waK:false,rm:590,acc:0,msg:null,msgU:0,buzzU:0,handled:false,tDone:0,test:null,hadOn:false};
+const B={start:{},time:{},prog:{},speed:{}};
+const names=['Manual','Recipe 1','Recipe 2','Eco-Self Clean'];
+const FN={ntc:'FAIL: NTC',motor:'FAIL: MOTOR',safety:'FAIL: SFTYSWTCH',heater:'FAIL: HEATRRELAY',buzzer:'FAIL: BUZZER'};
+const OBS={};const ORD=['1 Master Start/Stop','2 Timer 30–60 min, wraps','3 Speed and motor pulsing','4 Heater band 77–82 °C','5 End alarm 5 s','6 Program cycle to Eco and back','7 REQCLEAN and clean reset','8 Self-test PASS','9 Workaround active'];
+function ob(n){if(!OBS[n]){OBS[n]=1;$('chk').children[n-1].classList.add('ok');log('Order '+ORD[n-1]+' observed')}}
+$('chk').innerHTML=ORD.map(o=>'<div class="k">Order '+o+'</div>').join('');
+function log(s){const l=$('log');l.innerHTML+='['+fmt(S.t)+'] '+s+'<br>';l.scrollTop=l.scrollHeight}
+function fmt(ms){const s=Math.floor(ms/1000);return Math.floor(s/3600)+':'+String(Math.floor(s/60)%60).padStart(2,'0')+':'+String(s%60).padStart(2,'0')}
+const lid=()=>$('lid').checked&&!$('fS').checked;
+function apply(m){S.mode=m;S.run=60000;S.pause=30000;const P=[[30,50,80],[45,70,75],[50,60,80],[10,25,60]][m];S.timer=P[0];S.speed=P[1];S.lo=P[2]-3;S.hi=P[2]+2;if(m==3){S.run=10000;S.pause=50000}}
+function leave(){if(S.mode==1||S.mode==2){S.mode=0;S.lo=77;S.hi=82}}
+function msg(a,b,ms){S.msg=[a,b];S.msgU=S.t+ms}
+function beep(ms){S.buzzU=S.t+ms}
+function outsOff(){S.heat=false;S.mOn=false;S.buzzU=0}
+function flush(){const a=Math.floor(S.acc/60000);if(a){S.rm+=a;S.acc-=a*60000}}
+function stopAll(){outsOff();flush();S.st='IDLE';S.test=null;S.msg=null}
+function tryStart(){
+ if(!lid()){msg('CLOSE LID / JUG','THEN PRESS START',2500);beep(150);return}
+ if(S.F.ntc&&!S.waT){msg('FAIL: NTC','USE WORKAROUND',3000);return}
+ if(S.F.motor&&!S.waK){msg('FAIL: MOTOR','USE WORKAROUND',3000);return}
+ S.st='RUN';S.t0=S.t;S.dur=S.timer*60000;S.mOn=!S.waK;S.tp=S.t;beep(100);log('Run started: '+names[S.mode]+', '+S.timer+' min, '+S.speed+'%');if(S.mode==3&&S.F.motor===undefined){}
+}
+function finish(){S.heat=false;S.mOn=false;flush();if(S.mode==3){S.rm=0;S.acc=0;ob(7);log('Clean cycle finished: counter reset')}S.st='DONE';S.tDone=S.t;beep(5000);log('Run finished: alarm 5 s');ob(5)}
+function startTest(){S.test={ph:0,t:S.t,f:{},ans:null,list:[],i:0};S.st='TEST';outsOff();msg('SELF-TEST','RUNNING...',99999999);log('Self-test started')}
+function press(n){const b=B[n];b.down=true;b.t=S.t;b.rt=performance.now();b.hold=false;
+ if(S.st=='TEST'&&S.test.ph==1){if(n=='prog')S.test.ans=true;if(n=='time')S.test.ans=false}
+ if(n=='start'){if(S.st!='IDLE'){if(S.st=='RUN')ob(1);stopAll();S.handled=true;log('Master stop: all outputs off')}else S.handled=false}
+ if(n=='prog'&&S.st=='IDLE'){apply((S.mode+1)%4);beep(40);if(S.mode==3)S.sawEco=1;if(S.mode==0&&S.sawEco)ob(6)}
+ if(n=='time'&&S.st=='IDLE'&&S.mode!=3){leave();const o=S.timer;S.timer+=5;if(S.timer>60){S.timer=30;if(o==60)ob(2)}beep(40)}
+ if(n=='speed'&&S.st=='IDLE'&&S.mode!=3){leave();S.speed+=10;if(S.speed>100)S.speed=50;beep(40)}}
+function release(n){const b=B[n];if(!b.down)return;b.down=false;if(n=='start'){if(!S.handled&&!b.hold&&S.st=='IDLE')tryStart();S.handled=false}}
+function holds(){for(const n in B){const b=B[n];if(b.down&&!b.hold&&performance.now()-b.rt>=5000){b.hold=true;
+ if(n=='start'&&S.st=='IDLE'&&!S.handled){S.handled=true;startTest()}
+ if(n=='time'&&S.st=='IDLE'&&S.mode==3){if(S.F.ntc){S.waT=true;msg('TIMED HEATING','ON - STAY NEAR',3000);beep(200);ob(9);log('Workaround: timed heating')}else msg('NO NTC FAULT','NOTHING CHANGED',2000)}
+ if(n=='speed'&&S.st=='IDLE'&&S.mode==3){if(S.F.motor){S.waK=true;msg('KETTLE ONLY MODE','MOTOR DISABLED',3000);beep(200);ob(9);log('Workaround: kettle-only')}else msg('NO MOTOR FAULT','NOTHING CHANGED',2000)}}}}
+function ntcOK(){return !$('fN').checked}
+function runStep(){
+ if(!ntcOK()){if(!S.ntcSince)S.ntcSince=S.t||1}else S.ntcSince=0;
+ if(S.ntcSince&&S.t-S.ntcSince>=1000&&!S.waT){stopAll();S.F.ntc=1;msg('FAIL: NTC','USE WORKAROUND',4000);beep(500);log('NTC lost while running: stopped');return}
+ if(S.t-S.t0>=S.dur){finish();return}
+ if(S.waK)S.mOn=false;
+ else if(S.mOn){if(S.t-S.tp>=S.run){S.mOn=false;S.tp=S.t}}
+ else if(S.t-S.tp>=S.pause){S.mOn=true;S.tp=S.t;if(S.hadOn)ob(3)}
+ if(S.mOn)S.hadOn=true;
+ if(S.waT){const e=S.t-S.t0;S.heat=e<30000||((e-30000)%20000)<5000}
+ else if(ntcOK()){if(S.T<S.lo){if(S.heat==false&&S.offSeen)ob(4);S.heat=true}else if(S.T>=S.hi){if(S.heat)S.offSeen=1;S.heat=false}}
+ else S.heat=false}
+function testStep(){const q=S.test,e=S.t-q.t;
+ if(q.ph==0){if(!lid())q.f.safety=1;if(!ntcOK())q.f.ntc=1;q.ph=1;q.t=S.t;beep(300);msg('BEEP HEARD?','PROGRAM = YES',99999999)}
+ else if(q.ph==1){if(q.ans!==null||e>6000){if(!q.ans)q.f.buzzer=1;q.ph=2;q.t=S.t;q.T0=S.T;msg('SELF-TEST','RUNNING...',99999999);if(!q.f.ntc)S.heat=true}}
+ else if(q.ph==2){if(!q.f.ntc&&e>=3000){S.heat=false;if(S.T-q.T0<0.2)q.f.heater=1}if(q.f.ntc||e>=3000){q.ph=3;q.t=S.t;if($('fM').checked)q.f.motor=1;else if(!q.f.safety)S.mOn=true,S.tSpeed=25}}
+ else if(q.ph==3){if(q.f.motor||e>=500){S.mOn=false;S.tSpeed=0;q.ph=4;q.t=S.t;q.list=Object.keys(q.f);S.F=Object.assign({},q.f);if(!S.F.ntc)S.waT=false;if(!S.F.motor)S.waK=false;
+  if(!q.list.length){msg('SELF-TEST','PASS',4000);beep(200);ob(8);log('Self-test: PASS')}else{log('Self-test: '+q.list.map(k=>FN[k]).join(', '));msg('SELF-TEST',FN[q.list[0]],2500)}}}
+ else if(q.ph==4){const n=q.list.length||1;if(e>=(q.list.length?2500*n:4000)){S.msg=null;S.st='IDLE';S.test=null}else if(q.list.length){msg('SELF-TEST',FN[q.list[Math.min(n-1,Math.floor(e/2500))]],300)}}}
+function step(dt){S.t+=dt;holds();
+ const P=S.heat&&!$('fH').checked?850:0;S.T+=(P-1.5*(S.T-25))/4186*dt/1000;
+ const duty=S.mOn&&!$('fM').checked?(S.st=='TEST'?25:S.speed)/100:0;S.rpm+=(duty*24000-S.rpm)*Math.min(1,dt/300);
+ if(S.mOn&&S.st=='RUN'||S.mOn&&S.st=='TEST'){S.acc+=dt;if(S.acc>=300000)flush()}
+ if(S.st=='RUN'){if(!lid()){stopAll();msg('LID OPEN','MACHINE STOPPED',3000);beep(300);log('Lid opened: everything stopped')}else runStep()}
+ else if(S.st=='DONE'&&S.t-S.tDone>=5000)S.st='IDLE';
+ else if(S.st=='TEST')testStep();
+ if(S.rm>=600&&!S.reqSeen){S.reqSeen=1;ob(7)}if(S.rm<600)S.reqSeen=0;
+ if(S.heat&&S.st!='TEST'&&S.waT)ob(9);rec()}
+const CH=[['D2 START','d'],['D3 TIME','d'],['D4 LID','d'],['D5 PROGRAM','d'],['D7 SPEED','d'],['D8 HEATER','d'],['D9 PWM %','p'],['D10 BUZZER','d'],['A0 NTC V','a']];
+const E=CH.map(()=>[]);let lastA=-1e9;
+function vals(){const lv=n=>B[n].down?0:1;return [lv('start'),lv('time'),lid()?0:1,lv('prog'),lv('speed'),S.heat?1:0,S.mOn?(S.st=='TEST'?25:S.speed):0,S.t<S.buzzU?1:0,ntcOK()?5*10000/(10000+100000*Math.exp(3950*(1/(S.T+273.15)-1/298.15))):0]}
+function rec(){const v=vals();for(let i=0;i<8;i++){const e=E[i];if(!e.length||e[e.length-1][1]!==v[i])e.push([S.t,v[i]]);if(e.length>6000)e.splice(0,1000)}if(S.t-lastA>=500){E[8].push([S.t,v[8]]);lastA=S.t;if(E[8].length>6000)E[8].splice(0,1000)}}
+function drawSig(){const c=$('sig'),W=1000,H=360;if(c.width!=W){c.width=W;c.height=H}const x=c.getContext('2d'),cs=getComputedStyle(document.documentElement),ink=cs.getPropertyValue('--ink'),mut=cs.getPropertyValue('--mut'),ln=cs.getPropertyValue('--line'),g=cs.getPropertyValue('--g');
+ const win=+$('win').value*1000,t1=S.t,t0=t1-win,L=100,rh=H/9,X=t=>L+(t-t0)/win*(W-L);x.clearRect(0,0,W,H);x.font='13px Calibri,Arial,sans-serif';x.textBaseline='middle';
+ for(let i=0;i<9;i++){const y0=i*rh+6,h=rh-12,sc=i==6?100:i==8?5:1,Y=v=>y0+h*(1-v/sc);x.fillStyle=mut;x.fillText(CH[i][0],6,y0+h/2);x.strokeStyle=ln;x.lineWidth=1;x.beginPath();x.moveTo(L,y0+h+3);x.lineTo(W,y0+h+3);x.stroke();
+  const ev=E[i];let cur=ev.length?ev[0][1]:0;for(const e of ev){if(e[0]<=t0)cur=e[1];else break}
+  const pts=[[t0,cur]];for(const e of ev){if(e[0]>t0){if(i<8)pts.push([e[0],pts[pts.length-1][1]]);pts.push(e)}}pts.push([t1,pts[pts.length-1][1]]);
+  x.beginPath();pts.forEach((p,k)=>{k?x.lineTo(X(p[0]),Y(p[1])):x.moveTo(X(p[0]),Y(p[1]))});x.strokeStyle=(i==6||i==8)?g:ink;x.lineWidth=2;x.stroke();
+  if(i==6){x.lineTo(X(t1),Y(0));x.lineTo(X(t0),Y(0));x.globalAlpha=.25;x.fillStyle=g;x.fill();x.globalAlpha=1}
+  const lv=pts[pts.length-1][1];x.fillStyle=mut;x.textAlign='right';x.fillText(i==8?lv.toFixed(2)+' V':i==6?Math.round(lv)+' %':lv?'HIGH':'LOW',W-4,y0+8);x.textAlign='left'}
+ const p=$('pwm'),pw=1000,ph=90;if(p.width!=pw){p.width=pw;p.height=ph}const q=p.getContext('2d'),d=vals()[6]/100,per=(pw-L)/3;q.clearRect(0,0,pw,ph);q.font='13px Calibri,Arial,sans-serif';q.textBaseline='middle';q.fillStyle=mut;q.fillText('D9',6,ph/2);q.strokeStyle=g;q.lineWidth=2;q.beginPath();q.moveTo(L,ph-14);
+ for(let k=0;k<3;k++){const a=L+k*per;if(d>0){q.lineTo(a,14);q.lineTo(a+d*per,14)}q.lineTo(a+d*per,ph-14);q.lineTo(a+per,ph-14)}q.stroke();q.fillStyle=mut;q.textAlign='right';q.fillText('duty '+Math.round(d*100)+' %, average '+(d*5).toFixed(2)+' V',pw-4,10);q.textAlign='left'}
+var paused=false,ang=0;
+const WR=[],mk=(pts,col,get)=>WR.push({pts,col,get});
+const LY=[90,150,210,270,330],LN=['start','time','lid','prog','speed'],LT=['START / STOP  D2','TIME  D3','LID SWITCH  D4','PROGRAM  D5','SPEED  D7'];
+LY.forEach((y,i)=>mk([[240,y],[400,y]],['#e08a2c','#3b82c4','#8b5cc4','#1f9d8a','#c4433b'][i],V=>V[i]));
+mk([[600,90],[700,90]],'#e08a2c',V=>V[5]);mk([[800,90],[860,90]],'#e08a2c',V=>V[5]&&!$('fH').checked?1:0);
+mk([[600,170],[700,170]],'#3b82c4',V=>V[6]>0?1:0);mk([[800,170],[890,170]],'#3b82c4',V=>V[6]>0&&!$('fM').checked?1:0);
+mk([[600,250],[895,250]],'#8b5cc4',V=>V[7]);mk([[600,330],[700,330]],'#1f9d8a',V=>V[8]>0.05?1:0);
+mk([[600,410],[700,410]],'#c4433b',()=>$('fL').checked?0:1);mk([[600,450],[700,450]],'#2e8b57',()=>$('fL').checked?0:1);
+const TX=(x,y,t,id,a,s,c)=>`<text ${id?'id="'+id+'"':''} x="${x}" y="${y}" text-anchor="${a||'middle'}" style="fill:${c||'var(--ink)'};font:${s||13}px Calibri,Arial,sans-serif">${t}</text>`;
+const BX=(x,y,w,h,id)=>`<rect id="${id}" x="${x}" y="${y}" width="${w}" height="${h}" rx="8" style="fill:var(--card);stroke:var(--line);stroke-width:2"/>`;
+let sv='<svg viewBox="0 0 1000 520" role="img" aria-label="Nut Milk Maker circuit diagram">';
+WR.forEach((w,i)=>{sv+=`<polyline id="w${i}" points="${w.pts.map(p=>p.join(',')).join(' ')}" fill="none" stroke-linecap="round" style="stroke:#8a948e;stroke-width:2.5"/>`});
+sv+='<rect x="400" y="40" width="200" height="460" rx="10" style="fill:#2b6f8f;stroke:#1d4d63;stroke-width:3"/>'+TX(500,66,'ARDUINO NANO',0,16,'#fff')+TX(500,84,'ATmega328P',0,12,'#cfe3ee');
+['D2','D3','D4','D5','D7'].forEach((n,i)=>{sv+=`<circle cx="400" cy="${LY[i]}" r="5" style="fill:#d9a441"/>`+TX(412,LY[i]+4,n,0,'start',13,'#fff')});
+[['D8',90],['D9 PWM',170],['D10',250],['A0',330],['A4 SDA',410],['A5 SCL',450]].forEach(([n,y])=>{sv+=`<circle cx="600" cy="${y}" r="5" style="fill:#d9a441"/>`+TX(588,y+4,n,0,'end',13,'#fff')});
+LY.forEach((y,i)=>{sv+=`<g class="cb" data-i="${i}" style="cursor:pointer">`+BX(60,y-17,180,34,'c'+i)+TX(150,y+5,LT[i],'lt'+i)+'</g>'+TX(320,y-8,'','t'+i,0,12,'var(--mut)')});
+[[90,'t5'],[170,'t6'],[250,'t7'],[330,'t8']].forEach(([y,id])=>{sv+=TX(650,y-8,'',id,0,12,'var(--mut)')});
+sv+=BX(700,70,100,40,'rl')+TX(750,95,'Relay / SSR')+BX(860,66,100,48,'ht')+TX(910,95,'Heater 1 kW','hl');
+sv+=BX(700,150,100,40,'dv')+TX(750,175,'Motor driver')+'<circle cx="925" cy="170" r="30" style="fill:var(--card);stroke:var(--line);stroke-width:2"/><line id="sp" x1="925" y1="145" x2="925" y2="195" style="stroke:var(--g);stroke-width:4"/>'+TX(925,216,'DC motor',0,12,'var(--mut)');
+sv+='<circle cx="920" cy="250" r="22" style="fill:var(--card);stroke:var(--line);stroke-width:2"/>'+TX(920,255,'BZ')+'<path id="bz" d="M950 238 q12 12 0 24 M962 230 q18 20 0 40" fill="none" style="stroke:#b5533c;stroke-width:3;display:none"/>'+TX(920,290,'Buzzer',0,12,'var(--mut)');
+sv+=BX(700,310,100,40,'nt')+TX(750,335,'NTC 100k')+TX(815,326,'','nt1','start',13)+TX(815,344,'5V-NTC-A0-10k-GND',0,'start',11,'var(--mut)');
+sv+=TX(830,376,'LCD1602 I2C 0x27',0,0,12,'var(--mut)')+'<rect id="lc" x="700" y="385" width="260" height="90" rx="8" style="fill:var(--lcd);stroke:var(--line);stroke-width:3"/><text id="l1" x="714" y="425" xml:space="preserve" style="fill:var(--lcdi);font:700 17px Consolas,monospace;letter-spacing:1px"></text><text id="l2" x="714" y="455" xml:space="preserve" style="fill:var(--lcdi);font:700 17px Consolas,monospace;letter-spacing:1px"></text></svg>';
+$('ckt').innerHTML=sv;
+document.querySelectorAll('#ckt .cb').forEach(g=>{const n=LN[+g.dataset.i];if(n=='lid')g.addEventListener('click',()=>{$('lid').checked=!$('lid').checked;log('Lid '+($('lid').checked?'closed':'opened'))});else{g.addEventListener('pointerdown',e=>{e.preventDefault();g.setPointerCapture(e.pointerId);press(n)});['pointerup','pointercancel'].forEach(ev=>g.addEventListener(ev,()=>release(n)))}});
+$('run').onclick=()=>{paused=!paused;$('run').textContent=paused?'▶ Run':'⏸ Pause'};
+function drawCkt(){const V=vals(),G=id=>document.getElementById(id);
+ WR.forEach((w,i)=>{const e=G('w'+i),on=w.get(V);e.style.stroke=on?w.col:'#8a948e';e.style.strokeWidth=on?4.5:2.5});
+ LN.forEach((n,i)=>{const d=n=='lid'?lid():B[n].down;G('c'+i).style.fill=d?'var(--gold)':'var(--card)';G('t'+i).textContent=V[i]?'HIGH':'LOW'});
+ G('lt2').textContent=lid()?'LID CLOSED  D4':'LID OPEN  D4';
+ G('t5').textContent=V[5]?'HIGH':'LOW';G('t6').textContent=Math.round(V[6])+' % duty';G('t7').textContent=V[7]?'HIGH':'LOW';G('t8').textContent=V[8].toFixed(2)+' V';
+ const hon=V[5]&&!$('fH').checked;G('ht').style.fill=hon?'var(--gold)':'var(--card)';G('hl').textContent=hon?'Heater ON':'Heater off';
+ ang+=S.rpm/24000*30;G('sp').setAttribute('transform','rotate('+ang+' 925 170)');
+ G('bz').style.display=V[7]&&!$('fB').checked?'inline':'none';
+ G('nt1').textContent=ntcOK()?S.T.toFixed(1)+' °C':'OPEN';
+ G('lc').style.fill=$('fL').checked?'#222':'var(--lcd)';G('l1').textContent=S.la||'';G('l2').textContent=S.lb||''}
+function pad(s){return (s+'                ').slice(0,16)}
+function draw(){
+ let a,b;const tt=ntcOK()?String(Math.round(S.T)).padStart(2):'--';
+ if(S.msg&&S.t<S.msgU){a=S.msg[0];b=S.msg[1]}
+ else if(S.st=='DONE'){a='PROCESS FINISHED';b='ALARM 5 SEC'}
+ else{const blink=Math.floor(S.t/500)%2,bs=Math.floor(S.t/1000)%2;
+  if(S.st=='RUN'){const r=Math.max(0,Math.round((S.dur-(S.t-S.t0))/1000));a=['M','1','2','E'][S.mode]+' '+String(Math.floor(r/60)).padStart(2,'0')+':'+String(r%60).padStart(2,'0')+' T:'+tt+'C'}
+  else a=names[S.mode];
+  if(S.rm>=600&&blink)b='REQCLEAN';else if(S.waT&&bs)b='WARN: NO NTC';else if(S.waK&&bs)b='KETTLE ONLY';
+  else b=S.st=='RUN'?'MOT:'+(S.mOn?'ON ':'OFF')+' HEAT:'+(S.heat?'ON':'OFF'):String(S.timer).padStart(2)+'m '+String(S.speed).padStart(3)+'% T:'+tt+'C'}
+ const L=$('lcd');L.className='lcd'+($('fL').checked?' off':'');L.textContent=$('fL').checked?'':pad(a)+'\n'+pad(b);S.la=$('fL').checked?'':pad(a);S.lb=$('fL').checked?'':pad(b);
+ const buzz=S.t<S.buzzU&&!$('fB').checked;
+ $('lH').className='led'+(S.heat?' on':'');$('lB').className='led'+(buzz?' on r':'');$('lW').className='led'+(S.waT||S.waK?' on':'');
+ $('bd').style.width=(S.mOn&&!$('fM').checked?(S.st=='TEST'?25:S.speed):0)+'%';$('rpm').textContent=Math.round(S.rpm)+' RPM';
+ $('tt').textContent=S.T.toFixed(1)+' °C';$('ta').textContent=ntcOK()?S.T.toFixed(1)+' °C':'open circuit';
+ $('ee').textContent=S.rm+' min'+(S.rm>=600?' (clean due)':'');$('clk').textContent=fmt(S.t);
+ for(const n in B)document.querySelector('[data-b="'+n+'"]').classList.toggle('dn',!!B[n].down);drawSig();drawCkt()}
+document.querySelectorAll('[data-b]').forEach(el=>{const n=el.dataset.b;
+ el.addEventListener('pointerdown',e=>{e.preventDefault();el.setPointerCapture(e.pointerId);press(n)});
+ ['pointerup','pointercancel'].forEach(ev=>el.addEventListener(ev,()=>release(n)))});
+$('bClr').onclick=()=>{S.rm=595;log('Counter set to 595 min')};$('bCool').onclick=()=>{S.T=25};
+['fN','fM','fS','fH','fB','fL'].forEach(id=>$(id).addEventListener('change',()=>log($(id).parentNode.textContent.trim()+': '+($(id).checked?'ON':'off'))));
+let last=performance.now(),rest=0;
+setInterval(()=>{const now=performance.now(),m=+$('mult').value;rest+=paused?0:(now-last)*m;last=now;let n=0;while(rest>=10&&n<4000){step(10);rest-=10;n++}if(n>=4000)rest=0;draw()},50);
+log('Simulator ready. Machine idle, Manual program.');
+</script></body></html>
